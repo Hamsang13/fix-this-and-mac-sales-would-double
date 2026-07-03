@@ -1,9 +1,22 @@
 -- ⌘⌥E: 모든 외장(꺼내기 가능) 볼륨 eject.
--- 누른 즉시 Pop 소리로 인지시키고, 결과는 우상단 macOS 알림(hs.notify)으로 표시.
+-- 누른 즉시 Pop 소리로 인지시키고, 결과는 우상단 토스트로 표시.
 local sndPress = hs.sound.getByName("Pop")   -- 눌린 즉시
 local sndFail = hs.sound.getByName("Basso")  -- 실패(사용 중)
-local function notify(title, text)
-  hs.notify.new({ title = title, informativeText = text, withdrawAfter = 4 }):send()
+-- 우상단 토스트 (hs.alert는 중앙 고정이라 위치를 못 옮겨 canvas로 직접 그림)
+local function toast(text)
+  local pad = 14
+  local styled = hs.styledtext.new(text, { font = { size = 14 }, color = { white = 1 } })
+  local ts = hs.drawing.getTextDrawingSize(styled)
+  local w, h = math.ceil(ts.w) + pad * 2, math.ceil(ts.h) + pad * 2  -- 줄바꿈 없음, 긴 목록은 길어짐
+  local sf = hs.screen.mainScreen():frame()
+  local c = hs.canvas.new({ x = sf.x + sf.w - w - 16, y = sf.y + 16, w = w, h = h })
+  c:appendElements(
+    { type = "rectangle", action = "fill", roundedRectRadii = { xRadius = 10, yRadius = 10 },
+      fillColor = { black = 1, alpha = 0.82 } },
+    { type = "text", text = styled, frame = { x = pad, y = pad, w = w - pad * 2, h = h - pad * 2 } }
+  )
+  c:show()
+  hs.timer.doAfter(3, function() c:delete(0.4) end)
 end
 hs.hotkey.bind({"cmd", "alt"}, "e", function()
   sndPress:play()
@@ -17,12 +30,12 @@ hs.hotkey.bind({"cmd", "alt"}, "e", function()
       end
     end
     if #ok == 0 and #fail == 0 then
-      notify("⏏︎ 꺼내기", "꺼낼 외장 볼륨이 없어요")
+      toast("꺼낼 외장 볼륨이 없어요")
     elseif #fail == 0 then
-      notify("⏏︎ 꺼냄 완료 — 안전하게 뽑으세요", table.concat(ok, ", "))
+      toast("⏏︎ 꺼냄: " .. table.concat(ok, ", ") .. " — 안전하게 뽑으세요")
     else
       sndFail:play()
-      notify("⚠️ 사용 중이라 실패", table.concat(fail, ", ")
+      toast("⚠️ 사용 중이라 실패: " .. table.concat(fail, ", ")
         .. (#ok > 0 and ("  (꺼냄: " .. table.concat(ok, ", ") .. ")") or ""))
     end
   end)
