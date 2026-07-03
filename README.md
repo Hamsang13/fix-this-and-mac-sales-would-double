@@ -9,6 +9,7 @@
 | [`airpods-volume-restore`](airpods-volume-restore/) | 에어팟 연결 시 볼륨이 50%로 리셋되는 버그 → 마지막 볼륨 복원 |
 | [`usb-auto-open`](usb-auto-open/) | USB 저장장치 꽂으면 Finder로 자동 열기 |
 | [`eject-hotkey`](eject-hotkey/) | `⌘⌥E`로 모든 외장 볼륨 한 번에 꺼내기 |
+| [`hangul-fast-toggle`](hangul-fast-toggle/) | 한/영 전환 딜레이 제거 (느린 시스템 단축키 우회) |
 
 ## 설치
 
