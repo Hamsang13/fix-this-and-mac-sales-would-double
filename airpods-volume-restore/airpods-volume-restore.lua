@@ -28,14 +28,16 @@ local function scheduleRestore(dev)
   if not saved then return end
   restoring = true
   if commitTimer then commitTimer:stop(); commitTimer = nil end  -- 리셋값 커밋 취소
-  -- 1.5s = 리셋 타이밍 보정, +2s = 복원 후 잔여 리셋 이벤트가 지나갈 시간.
-  -- 복원이 늦거나 잔여 리셋이 새면 이 값들을 키운다.
-  hs.timer.doAfter(1.5, function()
-    if isAirPods(hs.audiodevice.defaultOutputDevice()) then
-      dev:setOutputVolume(saved)
-    end
-    hs.timer.doAfter(2, function() restoring = false end)
-  end)
+  -- 빠르게 첫 보정(블립 최소) + 여러 번 재적용(늦게 오는 리셋도 잡음).
+  -- 늦거나 리셋이 새면 시각/횟수를 늘린다.
+  for _, t in ipairs({ 0.2, 0.6, 1.2 }) do
+    hs.timer.doAfter(t, function()
+      if isAirPods(hs.audiodevice.defaultOutputDevice()) then
+        dev:setOutputVolume(saved)
+      end
+    end)
+  end
+  hs.timer.doAfter(3, function() restoring = false end)  -- 잔여 리셋 지나갈 시간
 end
 
 hs.audiodevice.watcher.setCallback(function()
