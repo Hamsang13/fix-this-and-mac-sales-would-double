@@ -11,6 +11,7 @@ end
 -- 이유: 핸드오프/재연결 시 macOS의 50% 리셋 이벤트가 AUDIO 워처보다 먼저 도착해
 -- 좋은 값을 덮어쓸 수 있어서. 리셋이 감지되면(scheduleRestore) 대기 커밋을 취소한다.
 local function trackVolume(dev)
+  _airpodsDev = dev  -- 전역 보관: 디바이스 객체가 GC되면 볼륨 워처가 죽어 감지/커밋 안 됨
   dev:watcherCallback(function()
     if restoring then return end
     local v = dev:outputVolume()
