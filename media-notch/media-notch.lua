@@ -183,6 +183,9 @@ local function renderFull(st, img)
     { type = "text", text = st.paused and "▶" or "⏸", textColor = { white = 1 }, textSize = 16, frame = { x = cx - 15, y = top + 78, w = 30, h = 22 }, textAlignment = "center" },
     { type = "text", text = "⏭", textColor = { white = 0.9 }, textSize = 16, frame = { x = cx + 31, y = top + 78, w = 30, h = 22 }, textAlignment = "center" },
     { type = "circle", center = { x = EXP_W - 22, y = top + 10 }, radius = 12, action = "fill", fillColor = { alpha = 0.01 }, id = "pin", trackMouseUp = true },
+    -- 앨범아트/제목 클릭 → 해당 앱 열기(투명 히트영역, 콘텐츠 위에)
+    { type = "rectangle", action = "fill", frame = { x = 16, y = top, w = 80, h = 80 }, fillColor = { alpha = 0.01 }, id = "open", trackMouseUp = true },
+    { type = "rectangle", action = "fill", frame = { x = colX, y = top, w = colW, h = 22 }, fillColor = { alpha = 0.01 }, id = "open", trackMouseUp = true },
   }
   for _, e in ipairs(rest) do els[#els + 1] = e end
   local pinX, pinY = EXP_W - 22, top + 10
@@ -243,6 +246,11 @@ local function onClick(_, msg, id)
     if _media.state then renderFull(_media.state, getArt(_media.state.art)) end
   elseif id == "prev" or id == "pp" or id == "next" then
     control(id)
+  elseif id == "open" then  -- 앨범아트/제목 클릭 → 해당 앱 열기
+    local src = _media.state and _media.state.source
+    if src == "spotify" then hs.application.launchOrFocus("Spotify")
+    elseif src == "music" then hs.application.launchOrFocus("Music")
+    else hs.execute([[open -a "YouTube Music"]]) end
   end
 end
 
