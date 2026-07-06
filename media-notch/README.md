@@ -21,5 +21,3 @@
 
 ## 설치
 `media-notch.lua` 내용을 `~/.hammerspoon/init.lua`에 붙여넣고 Reload Config. 접근성(+ 입력 모니터링) 권한 필요.
-
-> 이 기능만 따로 쓰는 전용 레포: https://github.com/Hamsang13/how-to-make-the-notch-useful
