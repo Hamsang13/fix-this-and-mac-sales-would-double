@@ -110,21 +110,50 @@ if out is "" then return "NONE"
 return out
 ]]
 
-local function parseState(out)
-  if not out or out == "" or out:match("^NONE") then return nil end
-  local best, firstAny  -- 재생 중(best) 우선, 없으면 첫 후보
+-- 출력의 모든 소스(정지 아님)를 후보 리스트로 파싱.
+local function parseCandidates(out)
+  local list = {}
+  if not out or out == "" or out:match("^NONE") then return list end
   for line in out:gmatch("[^\r\n]+") do
     if line ~= "" and line ~= "NONE" then
       local f = {}
       for s in (line .. "\t"):gmatch("(.-)\t") do f[#f + 1] = s end
       if #f >= 6 and not (f[2] == "" and f[3] == "") then
-        local c = { source = f[1], t = f[2] or "", b = f[3] or "", ct = tonumber(f[4]) or 0, du = tonumber(f[5]) or 0, paused = (f[6] == "1"), art = f[7] or "" }
-        firstAny = firstAny or c
-        if not c.paused and not best then best = c end
+        list[#list + 1] = { source = f[1], t = f[2] or "", b = f[3] or "", ct = tonumber(f[4]) or 0, du = tonumber(f[5]) or 0, paused = (f[6] == "1"), art = f[7] or "" }
       end
     end
   end
-  return best or firstAny
+  return list
+end
+
+-- 소스별 재생 이력으로 "가장 최근 재생" 소스를 타겟팅.
+-- 타겟이 1분 이상 일시정지면 그 이전에 재생하던 소스로 폴백, 전부 소진되면 nil(노치 비활성화).
+-- 핀 고정 시 현재 소스는 계속 유지.
+_media.sources = {}
+local function selectTarget(list)
+  local now = os.time()
+  local curSrc = _media.state and _media.state.source
+  local present = {}
+  for _, c in ipairs(list) do
+    present[c.source] = true
+    local s = _media.sources[c.source] or {}
+    s.cand = c
+    if not c.paused then s.lastPlay = now; s.pausedSince = nil
+    else s.pausedSince = s.pausedSince or now end
+    _media.sources[c.source] = s
+  end
+  for k in pairs(_media.sources) do if not present[k] then _media.sources[k] = nil end end
+  local pick, pickRank = nil, -1
+  for k, s in pairs(_media.sources) do
+    local playing = not s.cand.paused
+    local fresh = s.pausedSince and (now - s.pausedSince) < 60  -- 일시정지 1분 미만은 아직 적격
+    if playing or fresh or (_media.pinned and k == curSrc) then
+      local rank = s.lastPlay or 0
+      if playing and k == curSrc then rank = rank + 1 end  -- 현재 재생 타겟 유지(깜빡임 방지)
+      if rank > pickRank then pick, pickRank = s.cand, rank end
+    end
+  end
+  return pick
 end
 
 -- 앨범아트: YT는 URL 크기 키워 선명하게(다른 소스 URL은 그대로). URL 바뀔 때만 재다운로드.
@@ -296,29 +325,23 @@ local hadMedia = false
 local function readNow()
   hs.task.new("/usr/bin/osascript", function(_, out)
     if not _media.panel then return end  -- 정지됨: 삭제된 패널 건드리지 않기
-    local st = parseState(out)
+    local st = selectTarget(parseCandidates(out))
     _media.state = st
     local has = st ~= nil
-    if has then  -- 곡 바뀌면 스크롤 처음으로
-      local key = st.t .. "|" .. st.b
+    if has then  -- 곡/소스 바뀌면 스크롤 처음으로
+      local key = st.source .. "|" .. st.t .. "|" .. st.b
       if _media.lastTrack ~= key then _media.lastTrack = key; _media.scrollPx, _media.scrollPhase, _media.scrollHold = 0, "start", 0 end
     end
     if has ~= hadMedia then
       hadMedia = has
-      if has then _media.panel:show(0.2) else _media.panel:hide(0.2) end
-    end
-    -- 일시정지 1분 이상이면 자동 숨김(핀 상태 제외), 재생되면 복귀
-    if has then
-      if st.paused and not _media.pinned then
-        _media.pausedSince = _media.pausedSince or os.time()
-        if not _media.autoHidden and (os.time() - _media.pausedSince) >= 60 then
-          _media.autoHidden, _media.expanded = true, false
-          _media.panel:hide(0.2)
-        end
-      else
-        _media.pausedSince = nil
-        if _media.autoHidden then _media.autoHidden = false; _media.panel:show(0.2) end
+      if has then
+        _media.autoHidden = false; _media.panel:show(0.2)
+      else  -- 타겟 소진(전부 1분+ 일시정지/정지) → 노치 비활성화
+        _media.autoHidden, _media.expanded, _media.liveFrame = true, false, nil
+        _media.panel:hide(0.2)
       end
+    elseif has then
+      _media.autoHidden = false
     end
     if has and not _media.anim and not _media.autoHidden then  -- 애니/자동숨김 중엔 재렌더 안 함
       if _media.expanded then renderFull(st, getArt(st.art)) else renderMini(st) end
