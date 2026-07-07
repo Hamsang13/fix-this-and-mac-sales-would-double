@@ -16,7 +16,6 @@
 | [`usb-auto-open`](usb-auto-open/) | USB 저장장치 꽂으면 Finder로 자동 열기 |
 | [`eject-hotkey`](eject-hotkey/) | `⌘⌥E`로 모든 외장 볼륨 한 번에 꺼내기 |
 | [`hangul-fast-toggle`](hangul-fast-toggle/) | 한/영 전환 딜레이 제거 |
-| [`media-notch`](media-notch/) | 노치를 실시간 음악 위젯으로 (Spotify / Apple Music / YouTube Music) |
 
 ## 설치
 

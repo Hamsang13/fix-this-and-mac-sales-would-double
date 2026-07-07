@@ -16,7 +16,6 @@
 | [`usb-auto-open`](usb-auto-open/) | Opens a USB drive in Finder automatically when plugged in |
 | [`eject-hotkey`](eject-hotkey/) | `⌘⌥E` ejects all external volumes at once |
 | [`hangul-fast-toggle`](hangul-fast-toggle/) | Removes the Korean/English input-switch delay |
-| [`media-notch`](media-notch/) | Turns the notch into a live music widget (Spotify / Apple Music / YouTube Music) |
 
 ## Install
 
