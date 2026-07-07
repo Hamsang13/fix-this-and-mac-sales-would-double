@@ -6,7 +6,7 @@ for _, k in ipairs({ "dataT", "poll", "anim", "scrollT" }) do if _media[k] then 
 _media.scrollPx, _media.scrollPhase, _media.scrollHold, _media.lastTrack = 0, "start", 0, nil
 for _, k in ipairs({ "bar", "pop", "panel" }) do if _media[k] then _media[k]:delete() end end
 _media.bar, _media.pop, _media.panel, _media.state, _media.expanded, _media.out = nil, nil, nil, nil, false, 0
-_media.pinned = false
+_media.pinned, _media.autoHidden, _media.pausedSince = false, false, nil
 
 -- YT Music DOM에서 탭구분 문자열 반환(JS 안엔 큰따옴표 금지)
 local YT_JS = "(function(){var pb=document.querySelector('ytmusic-player-bar');var t=(pb&&pb.querySelector('.title'))?pb.querySelector('.title').textContent:'';var b=(pb&&pb.querySelector('.byline'))?pb.querySelector('.byline').textContent:'';var im=document.querySelector('#song-image img');var a=im?im.src:'';var v=document.querySelector('video');var ti=document.querySelector('.time-info');var cur=0,tot=0;function s(x){var p=(x||'').trim().split(':');return p.length===2?(parseInt(p[0])*60+parseInt(p[1])):0;}if(ti){var mm=ti.textContent.split('/');cur=s(mm[0]);tot=s(mm[1]);}if(!tot&&v)tot=Math.round(v.duration||0);if(!cur&&v)cur=Math.round(v.currentTime||0);var T=String.fromCharCode(9);return ['ytm',t,b,cur,tot,(v&&v.paused)?1:0,a].join(T);})()"
@@ -269,7 +269,20 @@ local function readNow()
       hadMedia = has
       if has then _media.panel:show(0.2) else _media.panel:hide(0.2) end
     end
-    if has and not _media.anim then  -- 애니메이션 중엔 재렌더 안 함
+    -- 일시정지 1분 이상이면 자동 숨김(핀 상태 제외), 재생되면 복귀
+    if has then
+      if st.paused and not _media.pinned then
+        _media.pausedSince = _media.pausedSince or os.time()
+        if not _media.autoHidden and (os.time() - _media.pausedSince) >= 60 then
+          _media.autoHidden, _media.expanded = true, false
+          _media.panel:hide(0.2)
+        end
+      else
+        _media.pausedSince = nil
+        if _media.autoHidden then _media.autoHidden = false; _media.panel:show(0.2) end
+      end
+    end
+    if has and not _media.anim and not _media.autoHidden then  -- 애니/자동숨김 중엔 재렌더 안 함
       if _media.expanded then renderFull(st, getArt(st.art)) else renderMini(st) end
     end
   end, { "-e", MEDIA_SCRIPT }):start()
@@ -285,13 +298,21 @@ local function poll()
     local fr = _media.panel:frame()
     inPanel = p.x >= fr.x - 6 and p.x <= fr.x + fr.w + 6 and p.y >= fr.y and p.y <= fr.y + fr.h + 6
   end
-  local want = (inNotch or inPanel or _media.pinned) and _media.state ~= nil
+  local want = (inNotch or inPanel or _media.pinned) and _media.state ~= nil and not _media.autoHidden
   if want then
     _media.out = 0
-    if not _media.expanded then _media.expanded = true; morph(true) end
+    if not _media.expanded then
+      _media.expanded = true
+      _media.scrollPx, _media.scrollPhase, _media.scrollHold = 0, "start", 0  -- 호버 시 스크롤 처음부터
+      morph(true)
+    end
   elseif _media.expanded then
     _media.out = _media.out + 1
-    if _media.out >= 1 then _media.expanded = false; morph(false) end  -- 거의 즉시 축소
+    if _media.out >= 1 then
+      _media.expanded = false
+      _media.scrollPx, _media.scrollPhase, _media.scrollHold = 0, "start", 0
+      morph(false)
+    end  -- 거의 즉시 축소
   end
 end
 
@@ -327,6 +348,7 @@ local function startWidget()
   if _media.panel then return end
   hadMedia = false
   _media.state, _media.expanded, _media.pinned, _media.out = nil, false, false, 0
+  _media.autoHidden, _media.pausedSince = false, nil
   -- 패널은 메뉴바(노치) 위에 그려야 해서 높은 레벨(floating은 메뉴바 아래로 밀림)
   _media.panel = hs.canvas.new(colFrame()); _media.panel:level(hs.canvas.windowLevels.screenSaver); _media.panel:mouseCallback(onClick)
   _media.panel:topLeft({ x = colFrame().x, y = colFrame().y })
