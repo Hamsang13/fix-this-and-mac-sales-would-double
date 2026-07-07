@@ -2,7 +2,7 @@
 -- 멀티소스: Spotify / Apple Music(음악) = 네이티브 AppleScript, YouTube Music = Chrome PWA DOM.
 -- 전제(YT Music만): Chrome "보기>개발자>Apple Events의 JavaScript 허용" 켜짐.
 _media = _media or {}
-for _, k in ipairs({ "dataT", "poll", "anim", "scrollT" }) do if _media[k] then _media[k]:stop() end end
+for _, k in ipairs({ "dataT", "poll", "anim", "scrollT", "frameT" }) do if _media[k] then _media[k]:stop() end end
 _media.scrollPx, _media.scrollPhase, _media.scrollHold, _media.lastTrack = 0, "start", 0, nil
 for _, k in ipairs({ "bar", "pop", "panel" }) do if _media[k] then _media[k]:delete() end end
 _media.bar, _media.pop, _media.panel, _media.state, _media.expanded, _media.out = nil, nil, nil, nil, false, 0
@@ -10,6 +10,24 @@ _media.pinned, _media.autoHidden, _media.pausedSince = false, false, nil
 
 -- YT Music DOM에서 탭구분 문자열 반환(JS 안엔 큰따옴표 금지)
 local YT_JS = "(function(){var pb=document.querySelector('ytmusic-player-bar');var t=(pb&&pb.querySelector('.title'))?pb.querySelector('.title').textContent:'';var b=(pb&&pb.querySelector('.byline'))?pb.querySelector('.byline').textContent:'';var im=document.querySelector('#song-image img');var a=im?im.src:'';var v=document.querySelector('video');var ti=document.querySelector('.time-info');var cur=0,tot=0;function s(x){var p=(x||'').trim().split(':');return p.length===2?(parseInt(p[0])*60+parseInt(p[1])):0;}if(ti){var mm=ti.textContent.split('/');cur=s(mm[0]);tot=s(mm[1]);}if(!tot&&v)tot=Math.round(v.duration||0);if(!cur&&v)cur=Math.round(v.currentTime||0);var T=String.fromCharCode(9);return ['ytm',t,b,cur,tot,(v&&v.paused)?1:0,a].join(T);})()"
+
+-- 일반 Chrome 탭(그냥 YouTube·SoundCloud·Twitch 등): Media Session API + 미디어 엘리먼트로 범용 추출.
+local GEN_JS = "(function(){var els=document.querySelectorAll('video,audio');var m=null,b=-1;for(var i=0;i<els.length;i++){var e=els[i];if(!e.paused){m=e;break;}var d=isFinite(e.duration)?e.duration:0;if(d>b){b=d;m=e;}}if(!m)return '';var cur=Math.round(m.currentTime||0);var pd=m.paused?1:0;if(pd&&cur===0)return '';var ms=navigator.mediaSession,md=ms&&ms.metadata;var ti=(md&&md.title)?md.title:document.title;var ar=(md&&md.artist)?md.artist:'';var aw=(md&&md.artwork&&md.artwork.length)?md.artwork[md.artwork.length-1].src:'';var tot=isFinite(m.duration)?Math.round(m.duration):0;if(!ti)return '';var T=String.fromCharCode(9);return ['chrome',ti,ar,cur,tot,pd,aw].join(T);})()"
+
+-- 확장(호버) 중 라이브 프레임: 재생 중 video를 작은 캔버스에 그려 JPEG data URI 반환(교차출처 tainted면 빈값).
+local FRAME_JS = "(function(){var vs=document.querySelectorAll('video'),v=null;for(var i=0;i<vs.length;i++){if(!vs[i].paused&&vs[i].videoWidth>0){v=vs[i];break;}}if(!v){for(var j=0;j<vs.length;j++){if(vs[j].videoWidth>0){v=vs[j];break;}}}if(!v||!v.videoWidth)return '';var W=160,H=Math.round(W*v.videoHeight/v.videoWidth);var c=document.createElement('canvas');c.width=W;c.height=H;var x=c.getContext('2d');try{x.drawImage(v,0,0,W,H);return c.toDataURL('image/jpeg',0.6);}catch(e){return '';}})()"
+local FRAME_SCRIPT = [[if application "Google Chrome" is running then
+  tell application "Google Chrome"
+    repeat with w in windows
+      set atab to active tab of w
+      try
+        set fr to (execute atab javascript "]] .. FRAME_JS .. [[")
+        if fr is not "" then return fr
+      end try
+    end repeat
+  end tell
+end if
+return ""]]
 
 -- Spotify는 설치돼 있을 때만 블록 포함(미설치면 tell 블록이 컴파일 자체가 안 돼 전체 파싱 실패).
 local SPOTIFY_BLOCK = ""
@@ -76,6 +94,15 @@ if application "Google Chrome" is running then
           exit repeat
         end if
       end repeat
+    end repeat
+    repeat with w in windows
+      set atab to active tab of w
+      try
+        if (URL of atab) does not contain "music.youtube.com" then
+          set gr to (execute atab javascript "]] .. GEN_JS .. [[")
+          if gr is not "" then set out to out & gr & LF
+        end if
+      end try
     end repeat
   end tell
 end if
@@ -167,7 +194,8 @@ local function renderFull(st, img)
   local cx = colX + colW / 2
   local ratio = (st.du > 0) and math.min(1, st.ct / st.du) or 0
   local els = { bgEl(EXP_W, mb + 118) }
-  els[#els + 1] = img and { type = "image", image = img, frame = { x = 16, y = top, w = 80, h = 80 } }
+  local artImg = (st.source == "chrome" and _media.liveFrame) or img
+  els[#els + 1] = artImg and { type = "image", image = artImg, imageScaling = "scaleToFit", frame = { x = 16, y = top, w = 80, h = 80 } }
       or { type = "rectangle", action = "fill", frame = { x = 16, y = top, w = 80, h = 80 }, roundedRectRadii = { xRadius = 8, yRadius = 8 }, fillColor = { white = 0.18 } }
   local dt = appendScroll(els, colX, top, colW, 22, st.t, 16, { white = 1 })
   local db = appendScroll(els, colX, top + 24, colW, 18, st.b, 13, { white = 0.62 })
@@ -231,10 +259,19 @@ local function control(action)
     script = 'tell application "Spotify" to ' .. ({ prev = "previous track", pp = "playpause", next = "next track" })[action]
   elseif src == "music" then
     script = 'tell application "Music" to ' .. ({ prev = "back track", pp = "playpause", next = "next track" })[action]
-  else
+  elseif src == "ytm" then
     local sel = ({ prev = ".previous-button", pp = "#play-pause-button", next = ".next-button" })[action]
     local js = "(document.querySelector('" .. sel .. "')||{click:function(){}}).click()"
     script = 'tell application "Google Chrome"\nrepeat with w in windows\nrepeat with t in tabs of w\nif (URL of t) contains "music.youtube.com" then\nexecute t javascript "' .. js .. '"\nreturn\nend if\nend repeat\nend repeat\nend tell'
+  else  -- chrome 일반 재생(그냥 YouTube 등): 활성 탭의 미디어 엘리먼트 직접 제어
+    local js
+    if action == "pp" then
+      js = "(function(){var e=document.querySelectorAll('video,audio'),m=null;for(var i=0;i<e.length;i++){if(e[i].currentTime>0||!e[i].paused){m=e[i];break;}}if(!m)m=e[0];if(m)m.paused?m.play():m.pause();})()"
+    else
+      local sel = action == "next" and ".ytp-next-button" or ".ytp-prev-button"
+      js = "(document.querySelector('" .. sel .. "')||{click:function(){}}).click()"
+    end
+    script = 'tell application "Google Chrome"\nrepeat with w in windows\ntry\nexecute (active tab of w) javascript "' .. js .. '"\nend try\nend repeat\nend tell'
   end
   hs.task.new("/usr/bin/osascript", function() hs.timer.doAfter(0.2, _media.readNow) end, { "-e", script }):start()
 end
@@ -250,6 +287,7 @@ local function onClick(_, msg, id)
     local src = _media.state and _media.state.source
     if src == "spotify" then hs.application.launchOrFocus("Spotify")
     elseif src == "music" then hs.application.launchOrFocus("Music")
+    elseif src == "chrome" then hs.application.launchOrFocus("Google Chrome")
     else hs.execute([[open -a "YouTube Music"]]) end
   end
 end
@@ -289,6 +327,26 @@ local function readNow()
 end
 _media.readNow = readNow
 
+-- 확장 중 & chrome 소스일 때만 활성 탭 video 프레임을 긁어 앨범아트 자리에 라이브 표시(~6-7fps).
+local grabbing = false
+local function frameGrab()
+  if grabbing then return end
+  if not (_media.expanded and _media.panel and _media.state and _media.state.source == "chrome") then return end
+  grabbing = true
+  hs.task.new("/usr/bin/osascript", function(_, out)
+    grabbing = false
+    if not (_media.panel and _media.expanded and _media.state and _media.state.source == "chrome") then return end
+    out = out and out:gsub("%s+$", "") or ""
+    if out:sub(1, 5) == "data:" then
+      local img = hs.image.imageFromURL(out)
+      if img then
+        _media.liveFrame = img
+        if not _media.anim then pcall(function() _media.panel[2].image = img end) end
+      end
+    end
+  end, { "-e", FRAME_SCRIPT }):start()
+end
+
 local function poll()
   local p = hs.mouse.absolutePosition()
   local f, mb = geo()
@@ -310,6 +368,7 @@ local function poll()
     _media.out = _media.out + 1
     if _media.out >= 1 then
       _media.expanded = false
+      _media.liveFrame = nil  -- 축소 시 라이브 프레임 정리
       _media.scrollPx, _media.scrollPhase, _media.scrollHold = 0, "start", 0
       morph(false)
     end  -- 거의 즉시 축소
@@ -360,11 +419,12 @@ local function startWidget()
   end)
   _media.poll = hs.timer.doEvery(0.04, poll)          -- 호버 반응 즉각
   _media.scrollT = hs.timer.doEvery(0.03, scrollTick) -- 부드러운 스크롤
+  _media.frameT = hs.timer.doEvery(0.15, frameGrab)   -- 확장 중 chrome 라이브 프레임(~6-7fps)
   _media.enabled = true
 end
 
 local function stopWidget()
-  for _, k in ipairs({ "dataT", "poll", "scrollT", "anim" }) do if _media[k] then _media[k]:stop(); _media[k] = nil end end
+  for _, k in ipairs({ "dataT", "poll", "scrollT", "anim", "frameT" }) do if _media[k] then _media[k]:stop(); _media[k] = nil end end
   if _media.panel then _media.panel:delete(); _media.panel = nil end
   _media.enabled = false
 end
