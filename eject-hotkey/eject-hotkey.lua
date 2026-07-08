@@ -32,7 +32,12 @@ hs.hotkey.bind({"cmd","alt"}, "e", function()
     for path, info in pairs(hs.fs.volume.allVolumes()) do
       if info["NSURLVolumeIsEjectableKey"] == true then
         local name = path:match("[^/]+$") or path
-        local _, status = hs.execute('diskutil eject ' .. ('%q'):format(path))
+        -- eject 전 macOS 메타데이터 찌꺼기 정리: ._* 병합/삭제 + .DS_Store 삭제 (윈도우에서 지저분하게 보이는 것 방지)
+        local q = ('%q'):format(path)
+        hs.execute('dot_clean ' .. q
+          .. '; find ' .. q .. " -name '._*' -delete"
+          .. '; find ' .. q .. " -name '.DS_Store' -delete")
+        local _, status = hs.execute('diskutil eject ' .. q)
         if status then ok[#ok+1] = name else fail[#fail+1] = name end
       end
     end
