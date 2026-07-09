@@ -13,9 +13,15 @@ end
 local function trackVolume(dev)
   _airpodsDev = dev  -- 전역 보관: 디바이스 객체가 GC되면 볼륨 워처가 죽어 감지/커밋 안 됨
   dev:watcherCallback(function()
-    if restoring then return end
     local v = dev:outputVolume()
     if not v then return end
+    if restoring then
+      -- 복원 중 들어온 변화가 저장값과 다르면 = 고정 시각(0.2/0.6/1.2초)보다 늦게 도착한
+      -- macOS 50% 리셋 → 즉시 되돌림. 타이밍에 의존하지 않고 리셋이 오는 순간 잡는다.
+      local saved = hs.settings.get(KEY)
+      if saved and math.abs(v - saved) > 0.5 then dev:setOutputVolume(saved) end
+      return
+    end
     if commitTimer then commitTimer:stop() end
     commitTimer = hs.timer.doAfter(3, function()
       if not restoring then hs.settings.set(KEY, v) end
@@ -38,7 +44,7 @@ local function scheduleRestore(dev)
       end
     end)
   end
-  hs.timer.doAfter(3, function() restoring = false end)  -- 잔여 리셋 지나갈 시간
+  hs.timer.doAfter(5, function() restoring = false end)  -- 잔여 리셋 지나갈 시간(늦게 오는 리셋 대비 넉넉히)
 end
 
 hs.audiodevice.watcher.setCallback(function()
