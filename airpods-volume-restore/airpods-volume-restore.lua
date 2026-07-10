@@ -15,11 +15,18 @@ local function trackVolume(dev)
   dev:watcherCallback(function()
     local v = dev:outputVolume()
     if not v then return end
+    local saved = hs.settings.get(KEY)
     if restoring then
       -- 복원 중 들어온 변화가 저장값과 다르면 = 고정 시각(0.2/0.6/1.2초)보다 늦게 도착한
       -- macOS 50% 리셋 → 즉시 되돌림. 타이밍에 의존하지 않고 리셋이 오는 순간 잡는다.
-      local saved = hs.settings.get(KEY)
       if saved and math.abs(v - saved) > 0.5 then dev:setOutputVolume(saved) end
+      return
+    end
+    -- restoring 창 밖(디바이스 변경 이벤트 없이 오는 리셋: 절전/깨어남·핸드오프 복귀)에서도 방어.
+    -- 저장된 좋은 값이 있는데 볼륨이 딱 50(리셋 시그니처)로 튀면 커밋 말고 되돌림 → 저장값 오염 방지.
+    -- ponytail: 50은 리셋값이라 '선호 볼륨 50%'은 저장 포기(그 한 값만 못 기억). 실사용 무영향.
+    if saved and math.abs(saved - 50) > 0.6 and math.abs(v - 50) < 0.6 then
+      dev:setOutputVolume(saved)
       return
     end
     if commitTimer then commitTimer:stop() end
